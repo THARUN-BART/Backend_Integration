@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Task Manager</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-tasks"></i> Task Manager</h1>
+            <p>Manage your tasks with style</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="task-form">
+                <div class="form-group">
+                    <label for="taskId">Task ID</label>
+                    <input type="text" id="taskId" class="form-input" placeholder="Enter unique task ID">
+                </div>
+                
+                <div class="form-group">
+                    <label for="taskTitle">Task Title</label>
+                    <input type="text" id="taskTitle" class="form-input" placeholder="Enter task description">
+                </div>
+                
+                <div class="form-actions">
+                    <button class="btn btn-primary" onclick="createTask()">
+                        <i class="fas fa-plus"></i> Create Task
+                    </button>
+                    <button class="btn btn-secondary" onclick="loadTasks()">
+                        <i class="fas fa-sync-alt"></i> Refresh Tasks
+                    </button>
+                </div>
+            </div>
+            
+            <div class="tasks-section">
+                <h2 class="section-title">
+                    <i class="fas fa-list"></i> Your Tasks
+                </h2>
+                
+                <div class="loading" id="loading">
+                    <i class="fas fa-spinner fa-spin"></i> Loading tasks...
+                </div>
+                
+                <div class="task-list" id="taskList">
+                    <!-- Tasks will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/users'; // Updated to match your route
+        let tasks = [];
+
+        // Load tasks on page load
+        document.addEventListener('DOMContentLoaded', loadTasks);
+
+        async function loadTasks() {
+            const loading = document.getElementById('loading');
+            const taskList = document.getElementById('taskList');
+            
+            loading.className = 'loading show';
+            
+            try {
+                const response = await fetch(API_BASE);
+                if (!response.ok) throw new Error('Failed to load tasks');
+                
+                tasks = await response.json();
+                renderTasks();
+                showNotification('Tasks loaded successfully', 'success');
+            } catch (error) {
+                console.error('Error loading tasks:', error);
+                showNotification('Failed to load tasks', 'error');
+                taskList.innerHTML = '<p style="text-align: center; color: #718096; padding: 40px;">Failed to load tasks. Please try again.</p>';
+            } finally {
+                loading.className = 'loading';
+            }
+        }
+
+        function renderTasks() {
+            const taskList = document.getElementById('taskList');
+            
+            if (tasks.length === 0) {
+                taskList.innerHTML = '<p style="text-align: center; color: #718096; padding: 40px;">No tasks found. Create your first task above!</p>';
+                return;
+            }
+            
+            taskList.innerHTML = tasks.map(task => `
+                <div class="task-item ${task.completed ? 'completed' : ''}">
+                    <div class="task-header">
+                        <div>
+                            <div class="task-title">${escapeHtml(task.title)}</div>
+                            <div class="task-id">ID: ${escapeHtml(task.id)}</div>
+                        </div>
+                        <span class="status-badge ${task.completed ? 'status-completed' : 'status-pending'}">
+                            ${task.completed ? 'Completed' : 'Pending'}
+                        </span>
+                    </div>
+                    
+                    <div class="task-actions">
+                        <button class="btn btn-secondary btn-small" onclick="toggleTask('${task.id}', ${!task.completed})">
+                            <i class="fas ${task.completed ? 'fa-undo' : 'fa-check'}"></i>
+                            ${task.completed ? 'Mark Pending' : 'Mark Complete'}
+                        </button>
+                        <button class="btn btn-danger btn-small" onclick="deleteTask('${task.id}')">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                    
+                    ${task.createdAt ? `<div class="task-meta">Created: ${new Date(task.createdAt).toLocaleString()}</div>` : ''}
+                    ${task.updatedAt ? `<div class="task-meta">Updated: ${new Date(task.updatedAt).toLocaleString()}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        async function createTask() {
+            const taskId = document.getElementById('taskId').value.trim();
+            const taskTitle = document.getElementById('taskTitle').value.trim();
+            
+            if (!taskId || !taskTitle) {
+                showNotification('Please fill in both Task ID and Title', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(API_BASE, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        id: taskId,
+                        title: taskTitle,
+                        completed: false
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText);
+                }
+                
+                // Clear form
+                document.getElementById('taskId').value = '';
+                document.getElementById('taskTitle').value = '';
+                
+                // Reload tasks
+                await loadTasks();
+                showNotification('Task created successfully', 'success');
+            } catch (error) {
+                console.error('Error creating task:', error);
+                showNotification(error.message || 'Failed to create task', 'error');
+            }
+        }
+
+        async function toggleTask(taskId, completed) {
+            try {
+                const response = await fetch(`${API_BASE}/${taskId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ completed })
+                });
+                
+                if (!response.ok) throw new Error('Failed to update task');
+                
+                await loadTasks();
+                showNotification(`Task ${completed ? 'completed' : 'marked as pending'}`, 'success');
+            } catch (error) {
+                console.error('Error updating task:', error);
+                showNotification('Failed to update task', 'error');
+            }
+        }
+
+        async function deleteTask(taskId) {
+            if (!confirm('Are you sure you want to delete this task?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/${taskId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) throw new Error('Failed to delete task');
+                
+                await loadTasks();
+                showNotification('Task deleted successfully', 'success');
+            } catch (error) {
+                console.error('Error deleting task:', error);
+                showNotification('Failed to delete task', 'error');
+            }
+        }
+
+        function showNotification(message, type) {
+            // Remove existing notifications
+            const existingNotifications = document.querySelectorAll('.notification');
+            existingNotifications.forEach(n => n.remove());
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> ${message}`;
+            
+            document.body.appendChild(notification);
+            
+            // Show notification
+            setTimeout(() => notification.classList.add('show'), 100);
+            
+            // Hide notification after 4 seconds
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 4000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Add enter key support for form inputs
+        document.getElementById('taskId').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('taskTitle').focus();
+            }
+        });
+
+        document.getElementById('taskTitle').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                createTask();
+            }
+        });
+    </script>
+</body>
+</html>
